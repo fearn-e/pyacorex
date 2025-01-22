@@ -1,0 +1,1 @@
+Python interpreter of ACorEx JSON corpus files.
