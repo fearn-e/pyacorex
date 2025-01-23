@@ -3,10 +3,12 @@ import numpy as np
 import os
 import sys
 
-if len(sys.argv) < 2:
-    print(f'Usage: {sys.argv[0]} filename.wav')
-    sys.exit(-1)
+# Require command line argument for JSON corpus file
+#if len(sys.argv) < 2:
+#    print(f'Usage: {sys.argv[0]} filename.wav')
+#    sys.exit(-1)
 
+# Load audio files and descriptor values from JSON corpus file
 def load_acorex_corpus(json_path):
     data = None
     try:
@@ -21,6 +23,11 @@ def load_acorex_corpus(json_path):
 
     audio_files_JSON = data.get("fileList", [])
     corpus_values_JSON = data.get("time.raw", [])
+    segment_length = int(data.get("windowFFTSize", 0))
+    hop_fraction = int(data.get("hopFraction", 0))
+    sample_rate = int(data.get("sampleRate", 0))
+
+    hop_size = int(segment_length / hop_fraction)
 
     audio_files = []
     for file_path in audio_files_JSON:
@@ -33,28 +40,58 @@ def load_acorex_corpus(json_path):
         else:
             print(f"File {file_path} not found.")
 
-    corpus_values = [np.array(item) for item in corpus_values_JSON]
-
-    return audio_files, corpus_values
-
-import plotly.graph_objects as go
-
-def main():
-    audio_files, corpus_values = load_acorex_corpus(sys.argv[1])
+    corpus_values = [np.array(item) for item in corpus_values_JSON] # each numpy array is a segment x descriptor array
+                                                                    # in the test corpus the descriptors are [time, umap1, umap2, umap3]
 
     print(f"Loaded {len(audio_files)} audio files.")
     print(f"Corpus values file count: {len(corpus_values)}")
-    for i, item in enumerate(corpus_values):
-        print(f"Corpus values file {i} (segment, descriptor) count: {item.shape}")
+    print(f"Total segment count: {sum([item.shape[0] for item in corpus_values])}")
+    print(f"Descriptor count: {corpus_values[0].shape[1]}")
+    print(f"Segment length: {segment_length}")
+    print(f"Sample rate: {sample_rate}")
+    print(f"Hop size: {hop_size}")
+    print(f"Segment length in ms: {segment_length / sample_rate * 1000}")
+    print(f"Hop size in ms: {hop_size / sample_rate * 1000}")
 
-    fig = go.Figure()
+    return audio_files, corpus_values, segment_length, sample_rate, hop_size
 
-    for i, item in enumerate(corpus_values):
-        fig.add_trace(go.Scatter3d(x=item[:,1], y=item[:,2], z=item[:,3], mode='markers', marker=dict(size=3)))
+import plotly.graph_objects as go
 
-    fig.show()
+# Main function
+audio_files, corpus_values, segment_length, sample_rate, hop_size = load_acorex_corpus("corpus.json")
 
-main()
+fig = go.FigureWidget()
+
+for i, item in enumerate(corpus_values):
+    scatter = go.Scatter3d(
+        x=item[:,1], y=item[:,2], z=item[:,3],
+        mode='lines+markers',
+        marker=dict(size=2, color=item[:,0]),
+        line=dict(width=1, color=item[:,0]),
+        opacity=0.5
+    )
+    fig.add_trace(scatter)
+
+fig.update_layout(hovermode='closest')
+
+scatter = fig.data[0]
+
+# Create our callback function
+def update_point(trace, points, selector):
+    print(f"Selected {len(points.point_inds)} points.")
+    c = list(trace.marker.color)
+    s = list(trace.marker.size)
+    for i in points.point_inds:
+        c[i] = '#bae2be'
+        s[i] = 20
+    with fig.batch_update():
+        trace.marker.color = c
+        trace.marker.size = s
+
+# Attach the callback to each scatter trace
+scatter.on_click(update_point)
+
+fig.show()
 
 # Display corpus values as a 3D point cloud in Panda3D - too complicated for now
 '''
